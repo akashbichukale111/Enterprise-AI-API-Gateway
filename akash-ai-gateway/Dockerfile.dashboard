@@ -1,0 +1,28 @@
+# ============================================================================
+# Akash AI Pro Gateway -- Streamlit Enterprise Dashboard Dockerfile
+# ============================================================================
+FROM python:3.11-slim
+
+RUN groupadd -r akash && useradd -r -g akash akash
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir \
+        streamlit==1.36.0 \
+        plotly==5.22.0 \
+        pandas==2.2.2 \
+        requests==2.32.3 \
+        streamlit-autorefresh==1.0.1
+
+COPY dashboard ./dashboard
+
+RUN chown -R akash:akash /app
+USER akash
+
+EXPOSE 8501
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')" || exit 1
+
+CMD ["streamlit", "run", "dashboard/app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.headless=true"]

@@ -1,0 +1,78 @@
+version: "3.9"
+
+# ==============================================================================
+# Akash AI Pro - Secure Enterprise API Gateway
+# 1-click orchestration: FastAPI Gateway + Redis + Streamlit Dashboard
+#
+# ARCHITECTURAL DECISION: Redis runs as its own service (not embedded/in-
+# process) to mirror production topology, where the rate-limiter's shared
+# state MUST live outside any single gateway replica so horizontal scaling
+# (multiple `api` replicas behind a load balancer) works correctly.
+# ==============================================================================
+
+services:
+  redis:
+    image: redis:7.2-alpine
+    container_name: akash-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - akash-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: akash-gateway-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENVIRONMENT: production
+      CORS_ORIGINS: '["*"]'
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - gateway_keys:/app/keys
+      - gateway_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - akash-network
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    container_name: akash-gateway-dashboard
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+    networks:
+      - akash-network
+
+networks:
+  akash-network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  gateway_keys:
+  gateway_logs:
